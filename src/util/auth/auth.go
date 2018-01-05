@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,9 +13,7 @@ import (
 
 	"github.com/asepnur/meiko_information/src/util/helper"
 
-	"github.com/asepnur/meiko_information/src/util/conn"
 	"github.com/asepnur/meiko_information/src/webserver/template"
-	"github.com/garyburd/redigo/redis"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -27,16 +23,9 @@ type (
 	}
 )
 
-const (
-	sessionPrefix     = "session:"
-	character         = "!QAZ@WSX#EDC$RFV%TGB^YHN&UJM*IK<(OL>)P:?_{+}|1qaz2wsx3edc4rfv5tgb6yhn7ujm8ik,9ol.0p-[=]"
-	listPrefixSession = "session:list:"
-)
-
 var (
 	c                  Config
 	errSessionNotlogin = errors.New("SessionNotLogin")
-	charMaxIndex       = len(character)
 )
 
 func Init(cfg Config) {
@@ -136,123 +125,6 @@ func Oauth(h httprouter.Handle) httprouter.Handle {
 		}
 		h(w, r, ps)
 	}
-}
-
-// DestroySession is used for destroying logged in user session
-func (u User) DestroySession(r *http.Request) (*http.Cookie, error) {
-	cookie, _ := r.Cookie(c.SessionKey)
-	session := strings.Trim(cookie.Value, " ")
-	client := conn.Redis.Get()
-	defer client.Close()
-
-	key := sessionPrefix + session
-	keyList := fmt.Sprintf("%s%d", listPrefixSession, u.ID)
-
-	_, err := redis.Bool(client.Do("DEL", key))
-	if err != nil && err != redis.ErrNil {
-		return nil, err
-	}
-
-	_, err = redis.Bool(client.Do("SREM", keyList, key))
-	if err != nil && err != redis.ErrNil {
-		return nil, err
-	}
-
-	return &http.Cookie{
-		Name:    c.SessionKey,
-		Expires: time.Now(),
-		Value:   "unuse",
-		Path:    "/",
-	}, nil
-}
-
-// DestroyAllSession is used for destroying all listed session of user
-func DestroyAllSession(id int64) error {
-
-	client := conn.Redis.Get()
-	defer client.Close()
-
-	listSession := fmt.Sprintf("%s%d", listPrefixSession, id)
-	keys, err := redis.Strings(client.Do("SMEMBERS", listSession))
-	if err != nil {
-		return err
-	}
-
-	// delete all logged in session
-	for _, key := range keys {
-		_, err = redis.Bool(client.Do("DEL", key))
-		if err != nil && err != redis.ErrNil {
-			return err
-		}
-	}
-
-	// delete list of session
-	_, err = redis.Bool(client.Do("DEL", listSession))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// UpdateSession will updates the cookies and listsession
-func (u User) UpdateSession() {
-	listSession := fmt.Sprintf("%s%d", listPrefixSession, u.ID)
-	data, err := json.Marshal(u)
-
-	client := conn.Redis.Get()
-	defer client.Close()
-
-	keys, err := redis.Strings(client.Do("SMEMBERS", listSession))
-	if err != nil {
-		fmt.Printf("Error func UpdateSession: %s", err.Error())
-	}
-
-	for _, key := range keys {
-		_, err = redis.String(client.Do("SET", key, data))
-		if err != nil {
-			fmt.Printf("Error func UpdateSession: %s", err.Error())
-		}
-	}
-}
-
-func (u User) SetSession() (*http.Cookie, error) {
-
-	var cookie string
-	rand.Seed(time.Now().UTC().UnixNano())
-	for i := 0; i < 32; i++ {
-		cookie = cookie + string(character[rand.Intn(charMaxIndex)])
-	}
-
-	key := sessionPrefix + cookie
-	data, err := json.Marshal(u)
-	if err != nil {
-		return nil, fmt.Errorf(err.Error())
-	}
-
-	client := conn.Redis.Get()
-	defer client.Close()
-
-	// Session cookie
-	_, err = redis.String(client.Do("SET", key, data))
-	if err != nil {
-		return nil, fmt.Errorf("Failed to set session to Redis")
-	}
-
-	val := key
-	key = fmt.Sprintf("%s%d", listPrefixSession, u.ID)
-	// Sesion List Informations
-	_, err = redis.Bool(client.Do("SADD", key, val))
-	if err != nil {
-		return nil, fmt.Errorf("Failed to add list session to Redis")
-	}
-
-	return &http.Cookie{
-		Name:    c.SessionKey,
-		Expires: time.Now().AddDate(0, 1, 0),
-		Value:   cookie,
-		Path:    "/",
-	}, nil
 }
 
 func (u User) IsHasRoles(module string, roles ...string) bool {

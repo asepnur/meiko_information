@@ -22,10 +22,5 @@
     },
     "auth": {
         "sessionkey": "_SID_Meiko_"
-    },
-    "directory": {
-        "static": "/var/www/meiko/static",
-        "email": "/var/www/meiko/email",
-        "data": "/var/www/meiko/data"
     }
 }

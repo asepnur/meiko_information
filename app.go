@@ -5,9 +5,6 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/asepnur/meiko_information/src/cron"
-	"github.com/asepnur/meiko_information/src/email"
-	"github.com/asepnur/meiko_information/src/util/alias"
 	"github.com/asepnur/meiko_information/src/util/auth"
 	"github.com/asepnur/meiko_information/src/util/conn"
 	"github.com/asepnur/meiko_information/src/util/env"
@@ -16,12 +13,9 @@ import (
 )
 
 type configuration struct {
-	Directory alias.DirectoryConfig `json:"directory"`
-	Database  conn.DatabaseConfig   `json:"database"`
-	Redis     conn.RedisConfig      `json:"redis"`
-	Webserver webserver.Config      `json:"webserver"`
-	Email     email.Config          `json:"email"`
-	Auth      auth.Config           `json:"auth"`
+	Database  conn.DatabaseConfig `json:"database"`
+	Webserver webserver.Config    `json:"webserver"`
+	Auth      auth.Config         `json:"auth"`
 }
 
 func init() {
@@ -40,11 +34,7 @@ func main() {
 	}
 
 	// initiate instance
-	alias.InitDirectory(config.Directory)
 	conn.InitDB(config.Database)
-	conn.InitRedis(config.Redis)
-	cron.Init()
 	auth.Init(config.Auth)
-	email.Init(config.Email)
 	webserver.Start(config.Webserver)
 }
