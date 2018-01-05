@@ -48,8 +48,8 @@ type Schedule struct {
 }
 
 type CourseSchedule struct {
-	Course   Course
-	Schedule Schedule
+	Course   Course   `json:"course"`
+	Schedule Schedule `json:"schedule"`
 }
 
 type GradeParameter struct {
@@ -62,4 +62,23 @@ type GradeParameter struct {
 type CourseConcise struct {
 	ID   int64  `db:"id"`
 	Name string `db:"name"`
+}
+
+type GetOne struct {
+	Involved bool           `json:"involved"`
+	Course   CourseSchedule `json:"course"`
+}
+
+type GetOneHTTPResponse struct {
+	Message string   `json:"message,omitempty"`
+	Error   []string `json:"error,omitempty"`
+	Code    int      `json:"code"`
+	Data    GetOne   `json:"data, omitempty"`
+}
+
+type GetAllHTTPResponse struct {
+	Message string           `json:"message,omitempty"`
+	Error   []string         `json:"error,omitempty"`
+	Code    int              `json:"code"`
+	Data    []CourseSchedule `json:"data, omitempty"`
 }

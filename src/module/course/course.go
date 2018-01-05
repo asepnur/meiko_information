@@ -1,9 +1,14 @@
 package course
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/asepnur/meiko_information/src/util/helper"
 
@@ -13,277 +18,92 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-func SelectIDByUserID(userID int64, status ...int8) ([]int64, error) {
-	var st string
-	if len(status) == 1 {
-		st = fmt.Sprintf("AND status = (%d)", status[0])
-	}
-
-	var scheduleID []int64
-	query := fmt.Sprintf(`SELECT schedules_id FROM p_users_schedules WHERE users_id = (%d) %s`, userID, st)
-	err := conn.DB.Select(&scheduleID, query)
-	if err != nil && err != sql.ErrNoRows {
-		return scheduleID, err
-	}
-
-	return scheduleID, nil
-}
-
-func SelectScheduleIDByUserID(userID int64, status ...int8) ([]int64, error) {
-
-	var st string
-	if len(status) == 1 {
-		st = fmt.Sprintf("AND status = (%d)", status[0])
-	}
-
-	var scheduleIDs []int64
-	query := fmt.Sprintf(`SELECT schedules_id FROM p_users_schedules WHERE users_id = (%d) %s;`, userID, st)
-	err := conn.DB.Select(&scheduleIDs, query)
-	if err != nil && err != sql.ErrNoRows {
-		return scheduleIDs, err
-	}
-	return scheduleIDs, nil
-}
-
-// CountEnrolled ...
-func CountEnrolled(usersID []int64, scheduleID int64) (int, error) {
-	var count int
-	ids := helper.Int64ToStringSlice(usersID)
-	queryID := strings.Join(ids, ", ")
-	query := fmt.Sprintf("SELECT COUNT(*) FROM p_users_schedules WHERE users_id IN (%s) AND schedules_id = (%d) AND status = (%d) LIMIT 1", queryID, scheduleID, PStatusStudent)
-	err := conn.DB.Get(&count, query)
-	if err != nil {
-		return count, err
-	}
-	return count, nil
-}
-
 func IsEnrolled(userID, scheduleID int64) bool {
-	var x string
-	query := fmt.Sprintf("SELECT 'x' FROM p_users_schedules WHERE users_id = (%d) AND schedules_id = (%d) AND status = (%d) LIMIT 1", userID, scheduleID, PStatusStudent)
-	err := conn.DB.Get(&x, query)
+
+	data := url.Values{}
+	data.Set("user_id", strconv.FormatInt(userID, 10))
+	data.Set("role", "student")
+	data.Set("schedule_id", strconv.FormatInt(scheduleID, 10))
+
+	params := data.Encode()
+	req, err := http.NewRequest("POST", "http://localhost:9001/api/internal/v1/course/getone", strings.NewReader(params))
 	if err != nil {
 		return false
 	}
+	req.Header.Add("Authorization", "abc")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(params)))
+
+	client := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	res := GetOneHTTPResponse{}
+	err = json.Unmarshal(body, &res)
+	if err != nil {
+		return false
+	}
+
+	if !res.Data.Involved {
+		return false
+	}
+
 	return true
 }
 
 func IsAssistant(userID, scheduleID int64) bool {
-	var x string
-	query := fmt.Sprintf(`
-		SELECT
-			'x'
-		FROM
-			p_users_schedules
-		WHERE
-			users_id = (%d) AND
-			schedules_id = (%d) AND
-			status = (%d)
-		LIMIT 1;
-	`, userID, scheduleID, PStatusAssistant)
-	err := conn.DB.Get(&x, query)
+
+	data := url.Values{}
+	data.Set("user_id", strconv.FormatInt(userID, 10))
+	data.Set("role", "assistant")
+	data.Set("schedule_id", strconv.FormatInt(scheduleID, 10))
+
+	params := data.Encode()
+	req, err := http.NewRequest("POST", "http://localhost:9001/api/internal/v1/course/getone", strings.NewReader(params))
 	if err != nil {
 		return false
 	}
-	return true
-}
+	req.Header.Add("Authorization", "abc")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(params)))
 
-func IsUnapproved(userID, scheduleID int64) bool {
-	var x string
-	query := fmt.Sprintf(`
-		SELECT
-			'x'
-		FROM
-			p_users_schedules
-		WHERE
-			users_id = (%d) AND
-			schedules_id = (%d) AND
-			status = (%d)
-		LIMIT 1;
-	`, userID, scheduleID, PStatusUnapproved)
-	err := conn.DB.Get(&x, query)
+	client := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
-	return true
-}
+	defer resp.Body.Close()
 
-func IsCreator(userID, scheduleID int64) bool {
-	var x string
-	query := fmt.Sprintf(`
-		SELECT
-			'x'
-		FROM
-			schedules
-		WHERE
-			id = (%d) AND
-			created_by = (%d)
-		LIMIT 1;
-	`, scheduleID, userID)
-	err := conn.DB.Get(&x, query)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return false
 	}
-	return true
-}
 
-func SelectAssistantID(scheduleID int64) ([]int64, error) {
-
-	userIDs := []int64{}
-	query := fmt.Sprintf(`SELECT
-		p.users_id
-	FROM
-		p_users_schedules p
-	WHERE 
-		p.status = (%d) AND
-		p.schedules_id = (%d);`, PStatusAssistant, scheduleID)
-	err := conn.DB.Select(&userIDs, query)
-	if err != nil && err != sql.ErrNoRows {
-		return userIDs, err
-	}
-
-	return userIDs, nil
-}
-
-func SelectAllAssistantID() ([]int64, error) {
-
-	userIDs := []int64{}
-	query := fmt.Sprintf(`SELECT
-		users_id
-	FROM
-		p_users_schedules
-	WHERE 
-		status = (%d);`, PStatusAssistant)
-	err := conn.DB.Select(&userIDs, query)
-	if err != nil && err != sql.ErrNoRows {
-		return userIDs, err
-	}
-
-	return userIDs, nil
-}
-
-func SelectEnrolledStudentID(scheduleID int64) ([]int64, error) {
-	userIDs := []int64{}
-	query := fmt.Sprintf(`SELECT
-			users_id
-		FROM
-			p_users_schedules
-		WHERE 
-			status = (%d) AND
-			schedules_id = (%d);`, PStatusStudent, scheduleID)
-	err := conn.DB.Select(&userIDs, query)
-	if err != nil && err != sql.ErrNoRows {
-		return userIDs, err
-	}
-
-	return userIDs, nil
-}
-
-func SelectAllName() ([]string, error) {
-
-	var names []string
-	query := fmt.Sprintf(`SELECT name FROM courses;`)
-	err := conn.DB.Select(&names, query)
-	if err != nil && err != sql.ErrNoRows {
-		return names, err
-	}
-
-	return names, nil
-}
-
-func IsExist(courseID string) bool {
-
-	var x string
-	query := fmt.Sprintf(`SELECT 'x' FROM courses WHERE id = ('%s') LIMIT 1;`, courseID)
-	err := conn.DB.Get(&x, query)
+	res := GetOneHTTPResponse{}
+	err = json.Unmarshal(body, &res)
 	if err != nil {
 		return false
 	}
+	fmt.Println(res)
+	if !res.Data.Involved {
+		return false
+	}
+
 	return true
-
-}
-
-func Update(courseID, name string, description sql.NullString, ucu int8, tx ...*sqlx.Tx) error {
-
-	queryDescription := fmt.Sprintf("NULL")
-	if description.Valid {
-		queryDescription = fmt.Sprintf("('%s')", description.String)
-	}
-
-	query := fmt.Sprintf(`
-		UPDATE
-			courses
-		SET
-			name = ('%s'),
-			description = %s,
-			ucu = (%d),
-			updated_at = NOW()
-		WHERE
-			id = ('%s');
-		`, name, queryDescription, ucu, courseID)
-
-	var result sql.Result
-	var err error
-	if len(tx) == 1 {
-		result, err = tx[0].Exec(query)
-	} else {
-		result, err = conn.DB.Exec(query)
-	}
-	if err != nil {
-		return err
-	}
-
-	rows, err := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("No rows affected")
-	}
-
-	return nil
-}
-
-func Insert(courseID, name string, description sql.NullString, ucu int8, tx ...*sqlx.Tx) error {
-
-	queryDescription := fmt.Sprintf("NULL")
-	if description.Valid {
-		queryDescription = fmt.Sprintf("('%s')", description.String)
-	}
-
-	query := fmt.Sprintf(`
-		INSERT INTO
-			courses (
-				id,
-				name,
-				description,
-				ucu,
-				created_at,
-				updated_at
-			)
-		VALUES (
-			('%s'),
-			('%s'),
-			%s,
-			(%d),
-			NOW(),
-			NOW()
-		);`, courseID, name, queryDescription, ucu)
-
-	var result sql.Result
-	var err error
-	if len(tx) == 1 {
-		result, err = tx[0].Exec(query)
-	} else {
-		result, err = conn.DB.Exec(query)
-	}
-	if err != nil {
-		return err
-	}
-
-	rows, err := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("No rows affected")
-	}
-
-	return nil
 }
 
 func IsExistSchedule(semester int8, year int16, courseID, class string, scheduleID ...int64) bool {
@@ -1290,4 +1110,141 @@ func DeleteUserRelation(userID, scheduleID int64) error {
 	}
 
 	return nil
+}
+
+func SelectEnrolledSchedule(userID int64) ([]CourseSchedule, error) {
+
+	var res []CourseSchedule
+
+	data := url.Values{}
+	data.Set("user_id", strconv.FormatInt(userID, 10))
+	data.Set("role", "student")
+
+	params := data.Encode()
+	req, err := http.NewRequest("POST", "http://localhost:9001/api/internal/v1/course/getall", strings.NewReader(params))
+	if err != nil {
+		return res, err
+	}
+	req.Header.Add("Authorization", "abc")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(params)))
+
+	client := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return res, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return res, err
+	}
+
+	jsn := GetAllHTTPResponse{}
+	err = json.Unmarshal(body, &jsn)
+	if err != nil {
+		return res, err
+	}
+
+	if jsn.Code != 200 {
+		return res, fmt.Errorf("error request")
+	}
+
+	return jsn.Data, nil
+}
+
+func SelectTeachedSchedule(userID int64) ([]CourseSchedule, error) {
+
+	var res []CourseSchedule
+
+	data := url.Values{}
+	data.Set("user_id", strconv.FormatInt(userID, 10))
+	data.Set("role", "assistant")
+
+	params := data.Encode()
+	req, err := http.NewRequest("POST", "http://localhost:9001/api/internal/v1/course/getall", strings.NewReader(params))
+	if err != nil {
+		return res, err
+	}
+	req.Header.Add("Authorization", "abc")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(params)))
+
+	client := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return res, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return res, err
+	}
+
+	jsn := GetAllHTTPResponse{}
+	err = json.Unmarshal(body, &jsn)
+	if err != nil {
+		return res, err
+	}
+
+	if jsn.Code != 200 {
+		return res, fmt.Errorf("error request")
+	}
+
+	return jsn.Data, nil
+}
+
+func Get(userID, scheduleID int64, isAssistant bool) (GetOne, error) {
+
+	var getOne GetOne
+
+	role := "student"
+	if isAssistant {
+		role = "assistant"
+	}
+
+	data := url.Values{}
+	data.Set("user_id", strconv.FormatInt(userID, 10))
+	data.Set("role", role)
+	data.Set("schedule_id", strconv.FormatInt(scheduleID, 10))
+
+	params := data.Encode()
+	req, err := http.NewRequest("POST", "http://localhost:9001/api/internal/v1/course/getone", strings.NewReader(params))
+	if err != nil {
+		return getOne, err
+	}
+	req.Header.Add("Authorization", "abc")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(params)))
+
+	client := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return getOne, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return getOne, err
+	}
+
+	res := GetOneHTTPResponse{}
+	err = json.Unmarshal(body, &res)
+	if err != nil {
+		return getOne, err
+	}
+
+	return res.Data, nil
 }

@@ -32,23 +32,14 @@ func GetHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		return
 	}
 
-	scheduleID, err := cs.SelectScheduleIDByUserID(sess.ID, cs.PStatusStudent)
-	if err != nil {
-		template.RenderJSONResponse(w, new(template.Response).
-			SetCode(http.StatusBadRequest).
-			AddError(err.Error()))
-		return
-	}
-
-	// get active course
-	courses, err := cs.SelectByScheduleID(scheduleID, cs.StatusScheduleActive)
+	courses, err := cs.SelectEnrolledSchedule(sess.ID)
 	if err != nil {
 		template.RenderJSONResponse(w, new(template.Response).
 			SetCode(http.StatusInternalServerError))
 		return
 	}
 
-	scheduleID = []int64{}
+	scheduleID := []int64{}
 	for _, val := range courses {
 		scheduleID = append(scheduleID, val.Schedule.ID)
 	}
@@ -75,15 +66,6 @@ func GetHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 			AddError(err.Error()))
 		return
 	}
-	var courseConcise []cs.CourseConcise
-	if len(scheduleID) > 1 {
-		courseConcise, err = cs.SelectJoinScheduleCourse(scheduleID)
-		if err != nil {
-			template.RenderJSONResponse(w, new(template.Response).
-				SetCode(http.StatusInternalServerError))
-			return
-		}
-	}
 
 	informationsID := []string{}
 	for _, val := range informations {
@@ -94,9 +76,9 @@ func GetHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	for _, val := range informations {
 		courseName := "general"
 		if val.ScheduleID.Int64 != 0 {
-			for _, schedules := range courseConcise {
-				if schedules.ID == val.ScheduleID.Int64 {
-					courseName = schedules.Name
+			for _, c := range courses {
+				if c.Schedule.ID == val.ScheduleID.Int64 {
+					courseName = c.Course.Name
 				}
 			}
 		}
@@ -203,12 +185,13 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 	}
 
 	if args.ScheduleID != 0 {
-		if !cs.IsExistScheduleID(args.ScheduleID) {
-			template.RenderJSONResponse(w, new(template.Response).
-				SetCode(http.StatusBadRequest).
-				AddError("Schedule ID does not exist"))
-			return
-		}
+		// no validation
+		// if !cs.IsExistScheduleID(args.ScheduleID) {
+		// 	template.RenderJSONResponse(w, new(template.Response).
+		// 		SetCode(http.StatusBadRequest).
+		// 		AddError("Schedule ID does not exist"))
+		// 	return
+		// }
 	}
 	err = inf.Update(args.Title, args.Description, args.ScheduleID, args.ID)
 	if err != nil {
@@ -231,25 +214,19 @@ func AvailableCourseInformation(w http.ResponseWriter, r *http.Request, ps httpr
 			AddError("You don't have privilege"))
 		return
 	}
-	scheduleID, err := cs.SelectScheduleIDByUserID(sess.ID, cs.PStatusAssistant)
+
+	courses, err := cs.SelectTeachedSchedule(sess.ID)
 	if err != nil {
 		template.RenderJSONResponse(w, new(template.Response).
-			SetCode(http.StatusBadRequest).
-			AddError(err.Error()))
+			SetCode(http.StatusInternalServerError))
 		return
 	}
-	courseConcise, err := cs.SelectJoinScheduleCourse(scheduleID)
-	if err != nil {
-		template.RenderJSONResponse(w, new(template.Response).
-			SetCode(http.StatusBadRequest).
-			AddError(err.Error()))
-		return
-	}
+
 	res := []respAvailableCourse{}
-	for _, val := range courseConcise {
+	for _, val := range courses {
 		res = append(res, respAvailableCourse{
-			ScheduleID: val.ID,
-			CourseName: val.Name,
+			ScheduleID: val.Schedule.ID,
+			CourseName: val.Course.Name,
 		})
 	}
 	template.RenderJSONResponse(w, new(template.Response).
@@ -285,21 +262,21 @@ func GetDetailByAdminHandler(w http.ResponseWriter, r *http.Request, ps httprout
 			AddError(err.Error()))
 		return
 	}
+
 	id := res.ScheduleID.Int64
 	desc := "-"
-	course := cs.CourseSchedule{}
+	course := cs.GetOne{}
 	if id != 0 {
-		if !cs.IsAssistant(sess.ID, id) {
-			template.RenderJSONResponse(w, new(template.Response).
-				SetCode(http.StatusBadRequest).
-				AddError("You does not have permission"))
-			return
-		}
-		course, err = cs.GetByScheduleID(id)
+		course, err = cs.Get(sess.ID, id, true)
 		if err != nil {
 			template.RenderJSONResponse(w, new(template.Response).
+				SetCode(http.StatusInternalServerError))
+			return
+		}
+		if !course.Involved {
+			template.RenderJSONResponse(w, new(template.Response).
 				SetCode(http.StatusBadRequest).
-				AddError(err.Error()))
+				AddError("Not Authorized"))
 			return
 		}
 	}
@@ -315,7 +292,7 @@ func GetDetailByAdminHandler(w http.ResponseWriter, r *http.Request, ps httprout
 		UpdatedDate: res.UpdatedAt.Format("Monday, 2 January 2006 15:04:05"),
 		Date:        res.UpdatedAt,
 		ScheduleID:  id,
-		CourseName:  course.Course.Name,
+		CourseName:  course.Course.Course.Name,
 	}
 	template.RenderJSONResponse(w, new(template.Response).
 		SetCode(http.StatusOK).
@@ -340,20 +317,19 @@ func ReadHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 			AddError("Invalid request"))
 		return
 	}
-	scheduleID, err := cs.SelectScheduleIDByUserID(sess.ID, cs.PStatusAssistant)
+
+	courses, err := cs.SelectTeachedSchedule(sess.ID)
 	if err != nil {
 		template.RenderJSONResponse(w, new(template.Response).
-			SetCode(http.StatusBadRequest).
-			AddError(err.Error()))
+			SetCode(http.StatusInternalServerError))
 		return
 	}
-	courseConcise, err := cs.SelectJoinScheduleCourse(scheduleID)
-	if err != nil {
-		template.RenderJSONResponse(w, new(template.Response).
-			SetCode(http.StatusBadRequest).
-			AddError(err.Error()))
-		return
+
+	scheduleID := []int64{}
+	for _, val := range courses {
+		scheduleID = append(scheduleID, val.Schedule.ID)
 	}
+
 	offset := (args.page - 1) * args.total
 	rows, err := inf.CountInformation(scheduleID, args.total, offset)
 	totalPage := rows / 10
@@ -380,9 +356,9 @@ func ReadHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	for _, value := range result {
 		courseName := "general"
 		if value.ScheduleID.Valid {
-			for _, val := range courseConcise {
-				if value.ScheduleID.Int64 == val.ID {
-					courseName = val.Name
+			for _, val := range courses {
+				if value.ScheduleID.Int64 == val.Schedule.ID {
+					courseName = val.Course.Name
 				}
 			}
 		}
