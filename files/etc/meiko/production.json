@@ -10,16 +10,6 @@
         "driver": "mysql",
         "database": "meiko"
     },
-    "redis": {
-        "address": "localhost:6379",
-        "password": ""
-    },
-    "email": {
-        "username": "meikodevelopment@gmail.com",
-        "password": "sandiaman01",
-        "address": "smtp.gmail.com",
-        "port": 587
-    },
     "auth": {
         "sessionkey": "_SID_Meiko_"
     }
