@@ -91,7 +91,6 @@ func IsAssistant(userID, scheduleID int64) bool {
 	if err != nil {
 		return false
 	}
-	fmt.Println(res)
 	if !res.Data.Involved {
 		return false
 	}

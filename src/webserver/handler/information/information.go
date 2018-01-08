@@ -38,7 +38,6 @@ func GetHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 			SetCode(http.StatusInternalServerError))
 		return
 	}
-
 	scheduleID := []int64{}
 	for _, val := range courses {
 		scheduleID = append(scheduleID, val.Schedule.ID)
@@ -58,7 +57,6 @@ func GetHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		Next: (args.page + 1),
 		Prev: (args.page - 1),
 	}
-
 	informations, err := inf.SelectByPage(scheduleID, args.total, offset)
 	if err != nil {
 		template.RenderJSONResponse(w, new(template.Response).
